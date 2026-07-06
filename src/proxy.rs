@@ -117,28 +117,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_connect_tcp_to_echo() {
-        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let handle = echo_server(addr).await;
-
-        // Find actual bound port
-        use std::net::UdpSocket;
-        let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
-        let local = udp.local_addr().unwrap();
-
-        // Use the actual listener address, not 0
-        let listen_addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-        let _listener = TcpListener::bind(listen_addr).await.unwrap();
-
-        // Actually bind a real address — use the listener's local addr
-        let actual_addr = _listener.local_addr().unwrap();
-
-        // We need a fresh approach — bind the echo server and get its port
-        handle.abort();
-
-        // Re-bind with a specific port from the OS
+        // Bind a listener on an OS-assigned port (port 0)
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let echo_addr = listener.local_addr().unwrap();
 
+        // Spawn echo server in background
         let handle = tokio::spawn(async move {
             if let Ok((mut stream, _)) = listener.accept().await {
                 let mut buf = vec![0u8; 65536];
@@ -155,7 +138,8 @@ mod tests {
             }
         });
 
-        let stream = connect_tcp(&echo_addr.to_string()).await.unwrap();
+        // Connect and exchange data
+        let mut stream = connect_tcp(&echo_addr.to_string()).await.unwrap();
         stream.write_all(b"hello").await.unwrap();
 
         let mut buf = vec![0u8; 16];
