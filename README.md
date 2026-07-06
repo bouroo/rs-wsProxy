@@ -66,9 +66,9 @@ Client (WebSocket) → wsProxy → Target Server (TCP)
 - [x] Verify pipeline (redirect → allow check)
 
 ### Phase 3: Server & TLS
-- [ ] Axum HTTP/WebSocket server
-- [ ] TLS support (rustls)
-- [ ] Health check endpoint
+- [x] Axum HTTP/WebSocket server
+- [x] TLS support (rustls)
+- [x] Health check endpoint
 
 ### Phase 4: CLI & Configuration
 - [ ] clap-based argument parsing

@@ -1,4 +1,4 @@
-use axum::{response::Html, Router};
+use axum::{http::StatusCode, response::Html, response::IntoResponse, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ impl Server {
     pub fn new(state: Arc<AppState>) -> Self {
         let router = Router::new()
             .route("/", axum::routing::get(get_root))
-            .route("/{*target}", axum::routing::get(ws_upgrade))
+            .route("/:target", axum::routing::get(ws_upgrade))
             .with_state(state);
 
         Server { router }
@@ -27,9 +27,12 @@ impl Server {
         tracing::info!("wsProxy listening on http://{}", addr);
 
         let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-        axum::serve(listener, self.router.into_make_service())
-            .await
-            .unwrap();
+        self.serve(listener).await;
+    }
+
+    /// Serve an already-bound listener (used by tests and by `start_plain`).
+    pub async fn serve(self, listener: tokio::net::TcpListener) {
+        axum::serve(listener, self.router).await.unwrap();
     }
 
     /// Start listening with TLS (rustls). Caller must supply cert+key paths.
@@ -62,9 +65,7 @@ async fn ws_upgrade(
 
     if !validate_target(&target) {
         tracing::warn!("ws rejected: invalid target format '{}'", target);
-        return ws.on_upgrade(|socket| async move {
-            let _ = socket.close().await;
-        });
+        return (StatusCode::BAD_REQUEST, "invalid target format").into_response();
     }
 
     match verify(&state, &target) {
@@ -74,10 +75,7 @@ async fn ws_upgrade(
         }
         VerifyResult::Rejected(reason) => {
             tracing::warn!("ws rejected: {}", reason.0);
-            ws.on_upgrade(|socket| async move {
-                // Close with code 1008 (policy violation) and drop.
-                let _ = socket.close().await;
-            })
+            (StatusCode::FORBIDDEN, reason.0).into_response()
         }
     }
 }

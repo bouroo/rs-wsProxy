@@ -39,21 +39,37 @@ fn main() {
 
     let server = server::Server::new(state);
 
-    if args.ssl {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                server.start_tls(addr, &args.key, &args.cert).await;
-            });
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(args.threads)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    runtime.block_on(async move {
+        let shutdown = async {
+            if let Err(e) = tokio::signal::ctrl_c().await {
+                tracing::error!("failed to listen for ctrl-c: {}", e);
+            }
+            tracing::info!("shutdown signal received");
+        };
+
+        tokio::select! {
+            _ = shutdown => {}
+            _ = run_server(server, addr, args.ssl, args.key, args.cert) => {}
+        }
+    });
+}
+
+async fn run_server(
+    server: server::Server,
+    addr: SocketAddr,
+    ssl: bool,
+    key: String,
+    cert: String,
+) {
+    if ssl {
+        server.start_tls(addr, &key, &cert).await;
     } else {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                server.start_plain(addr).await;
-            });
+        server.start_plain(addr).await;
     }
 }

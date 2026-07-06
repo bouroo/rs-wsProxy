@@ -1,0 +1,146 @@
+use futures_util::{SinkExt, StreamExt};
+use rs_ws_proxy::{AppState, Server};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_tungstenite::tungstenite;
+
+/// Start the plain HTTP/WebSocket server on an OS-assigned port and return the bound address.
+async fn spawn_test_server(allowed: Vec<String>, redirects: HashMap<String, String>) -> SocketAddr {
+    let state = Arc::new(AppState {
+        allowed_servers: allowed,
+        redirects,
+    });
+    let server = Server::new(state);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        server.serve(listener).await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    addr
+}
+
+#[tokio::test]
+async fn test_health_endpoint() {
+    let addr = spawn_test_server(Vec::new(), HashMap::new()).await;
+    let url = format!("http://{}/", addr);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .unwrap();
+
+    assert!(response.status().is_success());
+    let body = response.text().await.unwrap();
+    assert_eq!(body, "wsProxy running...\n");
+}
+
+#[tokio::test]
+async fn test_ws_upgrade_rejected_for_invalid_target_format() {
+    let addr = spawn_test_server(Vec::new(), HashMap::new()).await;
+    let url = format!("ws://{}/not-a-valid-target", addr);
+
+    let result = tokio_tungstenite::connect_async(&url).await;
+    assert!(result.is_err(), "expected upgrade rejection");
+}
+
+#[tokio::test]
+async fn test_ws_upgrade_rejected_when_not_in_allow_list() {
+    let addr = spawn_test_server(vec!["127.0.0.1:6900".to_string()], HashMap::new()).await;
+    let url = format!("ws://{}/127.0.0.1:5121", addr);
+
+    let result = tokio_tungstenite::connect_async(&url).await;
+    assert!(
+        result.is_err(),
+        "expected rejection for target not in allow list"
+    );
+}
+
+#[tokio::test]
+async fn test_route_matches_target_path() {
+    let addr = spawn_test_server(vec!["abc".to_string()], HashMap::new()).await;
+    let url = format!("http://{}/abc", addr);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .unwrap();
+
+    // Not a WS upgrade, but the route should match (not 404).
+    assert_ne!(response.status().as_u16(), 404);
+}
+
+#[tokio::test]
+async fn test_ws_upgrade_accepts_allowed_target() {
+    let echo_addr = spawn_echo_tcp_server().await;
+    let allowed = vec![echo_addr.to_string()];
+    let proxy_addr = spawn_test_server(allowed, HashMap::new()).await;
+    let url = format!("ws://{}/{}", proxy_addr, echo_addr);
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+
+    let payload = vec![1, 2, 3, 4];
+    ws.send(tungstenite::Message::Binary(payload.clone()))
+        .await
+        .unwrap();
+
+    let response = ws.next().await.unwrap().unwrap();
+    assert_eq!(response, tungstenite::Message::Binary(payload));
+}
+
+#[tokio::test]
+async fn test_ws_upgrade_redirect_rewrites_target() {
+    let echo_addr = spawn_echo_tcp_server().await;
+    let mut redirects = HashMap::new();
+    redirects.insert("login:6900".to_string(), echo_addr.to_string());
+    let proxy_addr = spawn_test_server(Vec::new(), redirects).await;
+
+    // Target is redirected to the echo server, so the upgrade succeeds.
+    let url = format!("ws://{}/login:6900", proxy_addr);
+    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+
+    let payload = vec![5, 6, 7, 8];
+    ws.send(tungstenite::Message::Binary(payload.clone()))
+        .await
+        .unwrap();
+
+    let response = ws.next().await.unwrap().unwrap();
+    assert_eq!(response, tungstenite::Message::Binary(payload));
+}
+
+/// Spawn a TCP echo server on an OS-assigned port and return its address.
+async fn spawn_echo_tcp_server() -> SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        if let Ok((stream, _)) = listener.accept().await {
+            let (mut read, mut write) = tokio::io::split(stream);
+            let mut buf = vec![0u8; 65536];
+            loop {
+                let n = match read.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    Err(_) => break,
+                };
+                if write.write_all(&buf[..n]).await.is_err() {
+                    break;
+                }
+            }
+        }
+    });
+
+    addr
+}
