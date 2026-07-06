@@ -6,7 +6,7 @@
 ![Release](https://img.shields.io/github/v/release/bouroo/rs-wsProxy)
 ![Docker Image](https://img.shields.io/badge/ghcr.io-bouroo%2Frs--wsProxy-blue)
 
-A tiny, fast Rust bridge that lets WebSocket clients talk to plain TCP servers. It was built for [roBrowser](https://github.com/vthibault/roBrowser) and the RagnarokRebuildTcp client, but works with any TCP backend.
+A tiny, fast Rust bridge that lets WebSocket clients talk to plain TCP servers. It was built for [roBrowserLegacy](https://github.com/MrAntares/roBrowserLegacy) and the RagnarokRebuildTcp client, but works with any TCP backend.
 
 The target server is encoded directly in the WebSocket URL path:
 
