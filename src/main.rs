@@ -8,7 +8,7 @@ mod modules;
 mod proxy;
 mod server;
 
-use config::{build_allowed_list, build_redirects, Args};
+use config::{build_allowed_list, build_redirects, validate_tls_paths, Args};
 use logging::warn_open_proxy;
 
 fn main() {
@@ -38,6 +38,11 @@ fn main() {
     let addr: SocketAddr = format!("0.0.0.0:{port}").parse().unwrap();
 
     let server = server::Server::new(state);
+
+    if let Err(e) = validate_tls_paths(args.ssl, &args.key, &args.cert) {
+        tracing::error!("{}", e);
+        std::process::exit(1);
+    }
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.threads)

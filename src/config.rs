@@ -11,31 +11,51 @@ use std::collections::HashMap;
 )]
 pub struct Args {
     /// Port to bind the HTTP/WebSocket server.
-    #[arg(short = 'p', long = "port", default_value_t = 5999)]
+    #[arg(
+        short = 'p',
+        long = "port",
+        env = "WSPROXY_PORT",
+        default_value_t = 5999
+    )]
     pub port: u16,
 
     /// Number of Tokio worker threads.
-    #[arg(short = 't', long = "threads", default_value_t = 1)]
+    #[arg(
+        short = 't',
+        long = "threads",
+        env = "WSPROXY_THREADS",
+        default_value_t = 1
+    )]
     pub threads: usize,
 
     /// Enable SSL/TLS.
-    #[arg(short = 's', long = "ssl")]
+    #[arg(short = 's', long = "ssl", env = "WSPROXY_SSL")]
     pub ssl: bool,
 
     /// SSL private key file path.
-    #[arg(short = 'k', long = "key", default_value = "./default.key")]
+    #[arg(
+        short = 'k',
+        long = "key",
+        env = "WSPROXY_KEY",
+        default_value = "./default.key"
+    )]
     pub key: String,
 
     /// SSL certificate file path.
-    #[arg(short = 'c', long = "cert", default_value = "./default.crt")]
+    #[arg(
+        short = 'c',
+        long = "cert",
+        env = "WSPROXY_CERT",
+        default_value = "./default.crt"
+    )]
     pub cert: String,
 
     /// Comma-separated list of allowed target addresses (ip:port).
-    #[arg(short = 'a', long = "allow")]
+    #[arg(short = 'a', long = "allow", env = "WSPROXY_ALLOW")]
     pub allow: Option<String>,
 
     /// Comma-separated list of redirects (source=target).
-    #[arg(short = 'r', long = "redirect")]
+    #[arg(short = 'r', long = "redirect", env = "WSPROXY_REDIRECT")]
     pub redirect: Option<String>,
 
     /// Show help and exit.
@@ -87,6 +107,28 @@ pub fn build_redirects(raw: Option<String>) -> HashMap<String, String> {
         }
     }
     map
+}
+
+/// Validate that TLS key/cert files exist when SSL is requested.
+/// Returns an error message if any required file is missing.
+pub fn validate_tls_paths(ssl: bool, key: &str, cert: &str) -> Result<(), String> {
+    if !ssl {
+        return Ok(());
+    }
+
+    if !std::path::Path::new(key).is_file() {
+        return Err(format!(
+            "SSL key file not found: {} (use -k/--key or WSPROXY_KEY)",
+            key
+        ));
+    }
+    if !std::path::Path::new(cert).is_file() {
+        return Err(format!(
+            "SSL certificate file not found: {} (use -c/--cert or WSPROXY_CERT)",
+            cert
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -297,5 +339,27 @@ mod tests {
     fn test_redirect_map_order_preserved() {
         let map = build_redirects(Some("a:1=b:2,c:3=d:4,e:5=f:6".to_string()));
         assert_eq!(map.len(), 3);
+    }
+
+    #[test]
+    fn test_validate_tls_paths_skips_when_ssl_disabled() {
+        assert!(validate_tls_paths(false, "missing.key", "missing.crt").is_ok());
+    }
+
+    #[test]
+    fn test_validate_tls_paths_fails_for_missing_key() {
+        let err = validate_tls_paths(true, "missing.key", "Cargo.toml").unwrap_err();
+        assert!(err.contains("SSL key file not found"));
+    }
+
+    #[test]
+    fn test_validate_tls_paths_fails_for_missing_cert() {
+        let err = validate_tls_paths(true, "Cargo.toml", "missing.crt").unwrap_err();
+        assert!(err.contains("SSL certificate file not found"));
+    }
+
+    #[test]
+    fn test_validate_tls_paths_succeeds_for_existing_files() {
+        assert!(validate_tls_paths(true, "Cargo.toml", "Cargo.toml").is_ok());
     }
 }

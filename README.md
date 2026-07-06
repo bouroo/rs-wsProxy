@@ -71,9 +71,9 @@ Client (WebSocket) → wsProxy → Target Server (TCP)
 - [x] Health check endpoint
 
 ### Phase 4: CLI & Configuration
-- [ ] clap-based argument parsing
-- [ ] Environment variable config (RUST_LOG)
-- [ ] Structured logging
+- [x] clap-based argument parsing
+- [x] Environment variable config (RUST_LOG, WSPROXY_*)
+- [x] Structured logging
 
 ### Phase 5: Testing & Validation
 - [ ] Unit tests for all modules
