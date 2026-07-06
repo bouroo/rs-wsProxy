@@ -140,4 +140,30 @@ mod tests {
             _ => panic!("expected accept after redirect resolution"),
         }
     }
+
+    #[test]
+    fn test_verify_redirect_does_not_chain() {
+        // Only the first redirect is applied; no recursive resolution.
+        let mut state = empty_state();
+        let mut redirects = HashMap::new();
+        redirects.insert("a:1".to_string(), "b:2".to_string());
+        redirects.insert("b:2".to_string(), "c:3".to_string());
+        state.redirects = redirects;
+
+        match verify(&state, "a:1") {
+            VerifyResult::Accepted(t) => assert_eq!(t, "b:2"),
+            _ => panic!("expected single-step redirect"),
+        }
+    }
+
+    #[test]
+    fn test_verify_empty_target_rejected_when_allow_list_present() {
+        let mut state = empty_state();
+        state.allowed_servers.push("127.0.0.1:6900".to_string());
+
+        match verify(&state, "") {
+            VerifyResult::Rejected(_) => {}
+            _ => panic!("expected rejection for empty target"),
+        }
+    }
 }
