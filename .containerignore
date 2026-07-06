@@ -1,0 +1,7 @@
+.git
+.agents
+.github
+.cargo
+/target
+/tests
+gh.err

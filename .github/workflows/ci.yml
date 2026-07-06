@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Build
+        run: cargo build
+      - name: Test
+        run: cargo test
+      - name: Verify container build
+        run: docker build -f Containerfile -t rs-wsproxy:ci .
+      - name: Test container run
+        run: |
+          docker run --rm -d --name wsproxy-ci -p 5999:5999 rs-wsproxy:ci -a "127.0.0.1:6900"
+          sleep 1
+          curl -sf http://127.0.0.1:5999/ || true
+          docker stop wsproxy-ci || true
+        timeout-minutes: 1
