@@ -60,12 +60,17 @@ fn main() {
         };
 
         let server = rs_ws_proxy::server::Server::new(state);
-        if args.ssl {
+        let result = if args.ssl {
             server
                 .start_tls(addr, &args.cert, &args.key, shutdown)
-                .await;
+                .await
         } else {
-            server.start_plain(addr, shutdown).await;
+            server.start_plain(addr, shutdown).await
+        };
+
+        if let Err(e) = result {
+            tracing::error!("Server error: {}", e);
+            std::process::exit(1);
         }
     });
 }

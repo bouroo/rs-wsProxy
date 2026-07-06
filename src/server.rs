@@ -27,17 +27,19 @@ impl Server {
     }
 
     /// Start listening on the given address (plain HTTP/WebSocket).
-    pub async fn start_plain<F>(self, addr: SocketAddr, signal: F)
+    ///
+    /// Returns `Ok(())` after the server shuts down gracefully, or propagates
+    /// the underlying `std::io::Error` if binding or serving fails.
+    pub async fn start_plain<F>(self, addr: SocketAddr, signal: F) -> Result<(), std::io::Error>
     where
         F: Future<Output = ()> + Send + 'static,
     {
         tracing::info!("wsProxy listening on http://{}", addr);
 
-        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(addr).await?;
         axum::serve(listener, self.router)
             .with_graceful_shutdown(signal)
             .await
-            .unwrap();
     }
 
     /// Serve an already-bound listener (used by tests).
@@ -50,15 +52,24 @@ impl Server {
     }
 
     /// Start listening with TLS (rustls). Caller must supply cert+key paths.
-    pub async fn start_tls<F>(self, addr: SocketAddr, cert_path: &str, key_path: &str, signal: F)
+    ///
+    /// Returns `Ok(())` after the server shuts down gracefully, or propagates
+    /// the underlying `std::io::Error` if the certificate/key files are invalid,
+    /// binding fails, or serving fails.
+    pub async fn start_tls<F>(
+        self,
+        addr: SocketAddr,
+        cert_path: &str,
+        key_path: &str,
+        signal: F,
+    ) -> Result<(), std::io::Error>
     where
         F: Future<Output = ()> + Send + 'static,
     {
         tracing::info!("wsProxy listening on https://{} (TLS)", addr);
 
-        let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
-            .await
-            .unwrap();
+        let config =
+            axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path).await?;
 
         let handle = axum_server::Handle::new();
         let server = axum_server::tls_rustls::bind_rustls(addr, config)
@@ -76,7 +87,7 @@ impl Server {
             shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
         });
 
-        server.await.unwrap();
+        server.await
     }
 }
 

@@ -47,8 +47,18 @@ pub fn verify(state: &AppState, target: &str) -> VerifyResult {
 }
 
 /// Validate that `target` looks like a valid host:port.
+///
+/// The last colon separates the host from the port; the host must be non-empty
+/// and the port must parse as a valid `u16`. This rejects malformed targets
+/// such as `127.0.0.1:abc` or `127.0.0.1:` before the WebSocket handshake.
 pub fn validate_target(target: &str) -> bool {
-    target.contains(':') && !target.is_empty()
+    if let Some(pos) = target.rfind(':') {
+        let host = &target[..pos];
+        let port = &target[pos + 1..];
+        !host.is_empty() && port.parse::<u16>().is_ok()
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -142,6 +152,10 @@ mod tests {
     fn test_validate_target_invalid() {
         assert!(!validate_target(""));
         assert!(!validate_target("no_colon"));
+        assert!(!validate_target("127.0.0.1:"));
+        assert!(!validate_target("127.0.0.1:abc"));
+        assert!(!validate_target(":6900"));
+        assert!(!validate_target("127.0.0.1:70000"));
     }
 
     #[test]
