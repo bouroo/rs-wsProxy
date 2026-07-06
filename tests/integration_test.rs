@@ -1,4 +1,5 @@
-use rs_ws_proxy::{AppState, Args};
+use clap::Parser;
+use rs_ws_proxy::{build_allowed_list, build_redirects, AppState, Args};
 
 #[test]
 fn test_default_args() {
@@ -68,11 +69,11 @@ fn test_app_state_creation() {
 #[test]
 fn test_build_allowed_list() {
     // Test empty string
-    let list = super::build_allowed_list(None);
+    let list = build_allowed_list(None);
     assert!(list.is_empty());
 
     // Test with values
-    let list = super::build_allowed_list(Some("127.0.0.1:6900,127.0.0.1:5121".to_string()));
+    let list = build_allowed_list(Some("127.0.0.1:6900,127.0.0.1:5121".to_string()));
     assert_eq!(list.len(), 2);
     assert_eq!(list[0], "127.0.0.1:6900");
     assert_eq!(list[1], "127.0.0.1:5121");
@@ -81,11 +82,11 @@ fn test_build_allowed_list() {
 #[test]
 fn test_build_redirects() {
     // Test empty string
-    let map = super::build_redirects(None);
+    let map = build_redirects(None);
     assert!(map.is_empty());
 
     // Test with redirects
-    let map = super::build_redirects(Some("localhost:6900=login:6900".to_string()));
+    let map = build_redirects(Some("localhost:6900=login:6900".to_string()));
     assert_eq!(map.len(), 1);
     assert_eq!(map.get("localhost:6900").unwrap(), "login:6900");
 }

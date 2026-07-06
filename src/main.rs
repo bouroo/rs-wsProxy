@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use std::net::SocketAddr;
 use std::sync::Arc;
 

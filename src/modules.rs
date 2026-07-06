@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::config::AppState;
 
 /// Reason the verify pipeline rejected a connection.
@@ -61,14 +59,20 @@ mod tests {
     #[test]
     fn test_verify_empty_allow_all() {
         let state = empty_state();
-        assert!(matches!(verify(&state, "127.0.0.1:6900"), VerifyResult::Accepted(_)));
+        assert!(matches!(
+            verify(&state, "127.0.0.1:6900"),
+            VerifyResult::Accepted(_)
+        ));
     }
 
     #[test]
     fn test_verify_allow_list_hit() {
         let mut state = empty_state();
         state.allowed_servers.push("127.0.0.1:6900".to_string());
-        assert!(matches!(verify(&state, "127.0.0.1:6900"), VerifyResult::Accepted(_)));
+        assert!(matches!(
+            verify(&state, "127.0.0.1:6900"),
+            VerifyResult::Accepted(_)
+        ));
     }
 
     #[test]
@@ -76,7 +80,9 @@ mod tests {
         let mut state = empty_state();
         state.allowed_servers.push("127.0.0.1:6900".to_string());
         match verify(&state, "127.0.0.1:9999") {
-            VerifyResult::Rejected(reason) => assert_eq!(reason.0, "target '127.0.0.1:9999' not in allow list"),
+            VerifyResult::Rejected(reason) => {
+                assert_eq!(reason.0, "target '127.0.0.1:9999' not in allow list")
+            }
             _ => panic!("expected rejection"),
         }
     }

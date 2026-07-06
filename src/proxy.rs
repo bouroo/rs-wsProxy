@@ -30,8 +30,8 @@ pub async fn connect_tcp(addr: &str) -> Result<TcpStream, String> {
 
 /// Bidirectional pump between a WebSocket and a TCP stream.
 /// Spawns two half-loops (ws→tcp, tcp→ws) and joins them.
-pub async fn handle_socket(socket: WebSocket, target: &str) {
-    let tcp = match connect_tcp(target).await {
+pub async fn handle_socket(socket: WebSocket, target: String) {
+    let tcp = match connect_tcp(&target).await {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("failed to connect TCP to {}: {}", target, e);
@@ -94,26 +94,6 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
-
-    /// Echo TCP server — reads bytes and writes them back.
-    async fn echo_server(addr: SocketAddr) -> tokio::task::JoinHandle<()> {
-        let listener = TcpListener::bind(addr).await.unwrap();
-        tokio::spawn(async move {
-            if let Ok((mut stream, _)) = listener.accept().await {
-                let mut buf = vec![0u8; 65536];
-                loop {
-                    let n = match stream.read(&mut buf).await {
-                        Ok(0) => break,
-                        Ok(n) => n,
-                        Err(_) => break,
-                    };
-                    if stream.write_all(&buf[..n]).await.is_err() {
-                        break;
-                    }
-                }
-            }
-        })
-    }
 
     #[tokio::test]
     async fn test_connect_tcp_to_echo() {

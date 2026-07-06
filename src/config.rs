@@ -6,7 +6,8 @@ use std::collections::HashMap;
 #[command(
     name = "wsproxy",
     version,
-    about = "WebSocket-to-TCP proxy (roBrowser-compatible)"
+    about = "WebSocket-to-TCP proxy (roBrowser-compatible)",
+    disable_help_flag = true
 )]
 pub struct Args {
     /// Port to bind the HTTP/WebSocket server.
