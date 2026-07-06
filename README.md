@@ -19,8 +19,11 @@ cargo run
 # With TLS and allow list
 cargo run -- -p 8080 -s -k ./default.key -c ./default.crt -a "127.0.0.1:6900,127.0.0.1:5121" -r "localhost:6900=login:6900"
 
-# Support both roBrowser and RagnarokRebuildTcp clients
-cargo run -- -r "ws=127.0.0.1:5000"
+# Support both roBrowser and RagnarokRebuildTcp clients using the dedicated default target
+cargo run -- -d "127.0.0.1:5000" -a "127.0.0.1:5000"
+
+# Legacy fallback: configure the default target via the redirect map
+cargo run -- -r "ws=127.0.0.1:5000" -a "127.0.0.1:5000"
 ```
 
 ### Client configuration examples
@@ -30,7 +33,7 @@ cargo run -- -r "ws=127.0.0.1:5000"
 | roBrowser | `ws://proxy:5999/127.0.0.1:6900` |
 | RagnarokRebuildTcp RebuildClient | `ws://proxy:5999/ws` |
 
-For the RebuildClient, the real TCP server is configured on the proxy side with `-r ws=<host>:<port>`.
+For the RebuildClient, the real TCP server is configured on the proxy side with `--default-target` (or `-r ws=<host>:<port>` as a legacy fallback).
 
 ### CLI Options
 
@@ -45,6 +48,7 @@ All options can also be set via `WSPROXY_*` environment variables (e.g., `WSPROX
 | `-c, --cert` | SSL certificate path | `./default.crt` | `WSPROXY_CERT` |
 | `-a, --allow` | Comma-separated allowed targets (ip:port) | empty (open proxy) | `WSPROXY_ALLOW` |
 | `-r, --redirect` | Comma-separated redirects (source=target) | empty | `WSPROXY_REDIRECT` |
+| `-d, --default-target` | Default target for RebuildClient `/ws` route | empty | `WSPROXY_DEFAULT_TARGET` |
 
 ## Protocol
 
@@ -58,13 +62,19 @@ Clients connect to `ws://proxy:port/<target>` where `<target>` is `host:port` of
 
 ### RebuildClient compatibility
 
-The RagnarokRebuildTcp/RebuildClient does not encode the target address in the URL path. Instead it connects to a fixed `/ws` path. To support it from the same proxy, configure a redirect from the special `ws` key to the real TCP server:
+The RagnarokRebuildTcp/RebuildClient does not encode the target address in the URL path. Instead it connects to a fixed `/ws` path. To support it from the same proxy, configure a default target:
 
 ```bash
-cargo run -- -r "ws=127.0.0.1:5000"
+cargo run -- -d "127.0.0.1:5000" -a "127.0.0.1:5000"
 ```
 
 Then set RebuildClient's server field to `ws://proxy:5999/ws`.
+
+If `--default-target` is not set, `/ws` falls back to a redirect entry with the special key `ws`:
+
+```bash
+cargo run -- -r "ws=127.0.0.1:5000" -a "127.0.0.1:5000"
+```
 
 **Requirement:** the backend must expose a plain TCP listener that accepts the same binary packets the RebuildClient sends inside its WebSocket frames. `rs-wsProxy` forwards the raw bytes; it does not translate WebSocket framing to a different TCP protocol.
 
@@ -143,4 +153,4 @@ cargo mutants
 
 ## License
 
-MIT License - see LICENSE file.
+AGPL-3.0 license - see LICENSE file.

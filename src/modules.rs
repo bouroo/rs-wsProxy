@@ -55,6 +55,7 @@ mod tests {
         AppState {
             allowed_servers: Vec::new(),
             redirects: HashMap::new(),
+            default_target: None,
         }
     }
 
