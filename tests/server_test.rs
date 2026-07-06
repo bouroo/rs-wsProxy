@@ -226,55 +226,6 @@ async fn test_ws_default_route_respects_allow_list() {
 }
 
 #[tokio::test]
-async fn test_ws_default_route_without_redirect_is_rejected() {
-    let addr = spawn_test_server(Vec::new(), HashMap::new()).await;
-    let url = format!("ws://{}/ws", addr);
-
-    let result = tokio_tungstenite::connect_async(&url).await;
-    assert!(
-        result.is_err(),
-        "expected rejection when no /ws default target is configured"
-    );
-}
-
-#[tokio::test]
-async fn test_ws_default_route_proxies_to_configured_target() {
-    let echo_addr = spawn_echo_tcp_server().await;
-    let mut redirects = HashMap::new();
-    redirects.insert("ws".to_string(), echo_addr.to_string());
-    let proxy_addr = spawn_test_server(Vec::new(), redirects).await;
-
-    let url = format!("ws://{}/ws", proxy_addr);
-    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-
-    let payload = vec![9, 10, 11, 12];
-    ws.send(tungstenite::Message::Binary(payload.clone()))
-        .await
-        .unwrap();
-
-    let response = ws.next().await.unwrap().unwrap();
-    assert_eq!(response, tungstenite::Message::Binary(payload));
-}
-
-#[tokio::test]
-async fn test_ws_default_route_respects_allow_list() {
-    let echo_addr = spawn_echo_tcp_server().await;
-    let mut redirects = HashMap::new();
-    redirects.insert("ws".to_string(), echo_addr.to_string());
-
-    // Allow list does not contain the resolved target, so /ws should be rejected.
-    let allowed = vec!["some-other-host:1234".to_string()];
-    let proxy_addr = spawn_test_server(allowed, redirects).await;
-
-    let url = format!("ws://{}/ws", proxy_addr);
-    let result = tokio_tungstenite::connect_async(&url).await;
-    assert!(
-        result.is_err(),
-        "expected rejection because resolved target is not in allow list"
-    );
-}
-
-#[tokio::test]
 async fn test_ws_upgrade_redirect_rewrites_target() {
     let echo_addr = spawn_echo_tcp_server().await;
     let mut redirects = HashMap::new();
@@ -310,24 +261,6 @@ async fn test_robrowser_route_still_works() {
 
     let response = ws.next().await.unwrap().unwrap();
     assert_eq!(response, tungstenite::Message::Binary(payload.into()));
-}
-
-#[tokio::test]
-async fn test_robrowser_route_still_works() {
-    let echo_addr = spawn_echo_tcp_server().await;
-    let allowed = vec![echo_addr.to_string()];
-    let proxy_addr = spawn_test_server(allowed, HashMap::new()).await;
-
-    let url = format!("ws://{}/{}", proxy_addr, echo_addr);
-    let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-
-    let payload = vec![1, 2, 3, 4];
-    ws.send(tungstenite::Message::Binary(payload.clone()))
-        .await
-        .unwrap();
-
-    let response = ws.next().await.unwrap().unwrap();
-    assert_eq!(response, tungstenite::Message::Binary(payload));
 }
 
 /// Spawn a TCP echo server on an OS-assigned port and return its address.
