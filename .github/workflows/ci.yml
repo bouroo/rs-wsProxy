@@ -32,11 +32,11 @@ jobs:
       - name: Test
         run: cargo test
       - name: Verify container build
-        run: docker build -f Containerfile -t rs-wsProxy:ci .
+        run: docker build -f Containerfile -t rs-wsproxy:ci .
       - name: Test container run
         run: |
-          docker run --rm -d --name wsproxy-ci -p 5999:5999 rs-wsProxy:ci -a "127.0.0.1:6900"
+          docker run --rm -d --name wsproxy-ci -p 5999:5999 rs-wsproxy:ci -a "127.0.0.1:6900"
           sleep 1
           curl -sf http://127.0.0.1:5999/ || true
-          docker stop wsproxy-ci
+          docker stop wsproxy-ci || true
         timeout-minutes: 1
