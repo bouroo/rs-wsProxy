@@ -1,8 +1,9 @@
 use axum::{
     extract::ws::{WebSocket, WebSocketUpgrade},
-    response::Html,
+    response::{Html, Response},
     Router,
 };
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
@@ -26,7 +27,7 @@ impl Server {
     }
 
     /// Start listening on the given port (plain HTTP/WebSocket).
-    pub async fn start_plain(self, addr: std::net::SocketAddr) {
+    pub async fn start_plain(self, addr: SocketAddr) {
         tracing::info!("wsProxy listening on http://{}", addr);
 
         let listener = TcpListener::bind(addr).await.unwrap();
@@ -36,33 +37,27 @@ impl Server {
     }
 
     /// Start listening with TLS (rustls). Caller must supply cert+key paths.
-    pub async fn start_tls(self, addr: std::net::SocketAddr, cert_path: &str, key_path: &str) {
+    pub async fn start_tls(self, addr: SocketAddr, cert_path: &str, key_path: &str) {
         tracing::info!("wsProxy listening on https://{} (TLS)", addr);
 
         let cert_file = std::fs::File::open(cert_path).unwrap();
         let mut reader = std::io::BufReader::new(cert_file);
         // Read certificates from PEM file
         let certs: Vec<rustls::Certificate> = rustls_pemfile::certs(&mut reader)
-            .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
         let key_file = std::fs::File::open(key_path).unwrap();
         let mut reader = std::io::BufReader::new(key_file);
         // Read private keys from the PEM file
-        let keys: Vec<rustls::PrivateKey> = rustls_pemfile::read_one(&mut reader)
+        let key = rustls_pemfile::read_one(&mut reader)
             .ok()
             .flatten()
-            .into_iter()
-            .filter_map(|item| match item {
+            .and_then(|item| match item {
                 rustls_pemfile::Item::PKCS1Key(k) => Some(rustls::PrivateKey(k)),
                 rustls_pemfile::Item::PKCS8Key(k) => Some(rustls::PrivateKey(k)),
                 _ => None,
             })
-            .collect();
-        let key = keys
-            .into_iter()
-            .next()
             .expect("key file must contain a private key");
 
         let config = rustls::ServerConfig::builder()
@@ -93,7 +88,7 @@ async fn ws_upgrade(
     ws: WebSocketUpgrade,
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::extract::Path(target): axum::extract::Path<String>,
-) -> WebSocket {
+) -> Response {
     // Run verify pipeline (redirect → allow).
     match verify(&state, &target) {
         VerifyResult::Accepted(resolved_target) => {
