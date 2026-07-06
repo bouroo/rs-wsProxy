@@ -1,7 +1,7 @@
 use axum::extract::ws::{Message, WebSocket};
 use bytes::BytesMut;
 use futures_util::{SinkExt, StreamExt};
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 /// Connect to `addr` (force IPv4), enable no-delay, zero timeout.
@@ -39,8 +39,9 @@ pub async fn handle_socket(socket: WebSocket, target: String) {
     };
 
     let (mut ws_tx, mut ws_rx) = socket.split();
-    // Splitting the TCP stream lets us read and write concurrently without a mutex.
-    let (mut tcp_read, mut tcp_write) = io::split(tcp);
+    // Splitting the TCP stream at the OS level lets us read and write concurrently
+    // without the internal BiLock synchronization overhead of tokio::io::split.
+    let (mut tcp_read, mut tcp_write) = tcp.into_split();
 
     // WS → TCP: forward only binary frames; the roBrowser protocol uses binary payloads.
     let ws_to_tcp = async {
