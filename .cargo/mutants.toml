@@ -1,0 +1,6 @@
+# Mutation testing configuration for cargo-mutants.
+# Run: cargo mutants
+
+# Exclude code that is inherently environment/CLI driven and hard to unit-test.
+examine_globs = ["src/**/*.rs"]
+skip_globs = ["src/main.rs", "src/logging.rs"]

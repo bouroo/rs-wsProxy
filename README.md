@@ -76,9 +76,9 @@ Client (WebSocket) → wsProxy → Target Server (TCP)
 - [x] Structured logging
 
 ### Phase 5: Testing & Validation
-- [ ] Unit tests for all modules
-- [ ] Integration tests (WebSocket + TCP echo)
-- [ ] Mutation testing with cargo-mutants
+- [x] Unit tests for all modules
+- [x] Integration tests (WebSocket + TCP echo)
+- [x] Mutation testing config (cargo-mutants)
 
 ### Phase 6: Documentation & Polish
 - [ ] README.md
