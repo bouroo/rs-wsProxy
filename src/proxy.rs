@@ -128,4 +128,18 @@ mod tests {
 
         handle.abort();
     }
+
+    #[tokio::test]
+    async fn test_connect_tcp_rejects_invalid_address() {
+        let result = connect_tcp("not-an-address").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid target address"));
+    }
+
+    #[tokio::test]
+    async fn test_connect_tcp_rejects_unreachable_port() {
+        // Nothing should be listening on this port; connect fails quickly.
+        let result = connect_tcp("127.0.0.1:1").await;
+        assert!(result.is_err());
+    }
 }
