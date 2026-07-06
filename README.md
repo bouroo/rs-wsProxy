@@ -18,7 +18,19 @@ cargo run
 
 # With TLS and allow list
 cargo run -- -p 8080 -s -k ./default.key -c ./default.crt -a "127.0.0.1:6900,127.0.0.1:5121" -r "localhost:6900=login:6900"
+
+# Support both roBrowser and RagnarokRebuildTcp clients
+cargo run -- -r "ws=127.0.0.1:5000"
 ```
+
+### Client configuration examples
+
+| Client | Server URL field |
+|--------|-----------------|
+| roBrowser | `ws://proxy:5999/127.0.0.1:6900` |
+| RagnarokRebuildTcp RebuildClient | `ws://proxy:5999/ws` |
+
+For the RebuildClient, the real TCP server is configured on the proxy side with `-r ws=<host>:<port>`.
 
 ### CLI Options
 
@@ -43,6 +55,18 @@ Clients connect to `ws://proxy:port/<target>` where `<target>` is `host:port` of
 3. Checks the allow-list (empty list = open proxy, logged at startup).
 4. Upgrades to WebSocket and opens a TCP connection to the resolved target.
 5. Pumps binary frames bidirectionally until either side closes.
+
+### RebuildClient compatibility
+
+The RagnarokRebuildTcp/RebuildClient does not encode the target address in the URL path. Instead it connects to a fixed `/ws` path. To support it from the same proxy, configure a redirect from the special `ws` key to the real TCP server:
+
+```bash
+cargo run -- -r "ws=127.0.0.1:5000"
+```
+
+Then set RebuildClient's server field to `ws://proxy:5999/ws`.
+
+**Requirement:** the backend must expose a plain TCP listener that accepts the same binary packets the RebuildClient sends inside its WebSocket frames. `rs-wsProxy` forwards the raw bytes; it does not translate WebSocket framing to a different TCP protocol.
 
 ## Performance
 

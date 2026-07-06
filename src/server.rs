@@ -14,8 +14,10 @@ pub struct Server {
 impl Server {
     /// Build a new server with the given state.
     pub fn new(state: Arc<AppState>) -> Self {
+        // Order matters: `/ws` must be matched before the catch-all `/:target`.
         let router = Router::new()
             .route("/", axum::routing::get(get_root))
+            .route("/ws", axum::routing::get(ws_upgrade_default))
             .route("/:target", axum::routing::get(ws_upgrade))
             .with_state(state);
 
@@ -53,6 +55,39 @@ impl Server {
 /// GET / — health check, returns "wsProxy running...\n" for compat.
 async fn get_root() -> Html<String> {
     Html("wsProxy running...\n".to_string())
+}
+
+/// WebSocket upgrade handler for the `/ws` path used by clients that do not
+/// encode the target address in the URL path (e.g., RagnarokRebuildTcp's
+/// RebuildClient). The actual TCP target is resolved from the redirect map
+/// using the special key `ws`, allowing the same proxy to serve both
+/// roBrowser-style and Rebuild-style clients.
+async fn ws_upgrade_default(
+    ws: axum::extract::ws::WebSocketUpgrade,
+    state: axum::extract::State<Arc<AppState>>,
+) -> axum::response::Response {
+    let target = match state.redirects.get("ws") {
+        Some(target) => target.clone(),
+        None => {
+            tracing::warn!("ws rejected: /ws requested but no default target configured");
+            return (
+                StatusCode::BAD_REQUEST,
+                "no default target configured for /ws; use -r ws=<host>:<port>",
+            )
+                .into_response();
+        }
+    };
+
+    match verify(&state, &target) {
+        VerifyResult::Accepted(resolved_target) => {
+            tracing::info!("ws upgrade: /ws -> target={}", resolved_target);
+            ws.on_upgrade(move |socket| handle_socket(socket, resolved_target))
+        }
+        VerifyResult::Rejected(reason) => {
+            tracing::warn!("ws rejected: {}", reason.0);
+            (StatusCode::FORBIDDEN, reason.0).into_response()
+        }
+    }
 }
 
 /// WebSocket upgrade handler — extracts target from URL path, runs verify pipeline, then proxies.
