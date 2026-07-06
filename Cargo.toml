@@ -1,0 +1,23 @@
+[package]
+name = "rs-wsProxy"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "rs_ws_proxy"
+path = "src/lib.rs"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+tokio-rustls = "0.24"
+rustls = "0.21"
+rustls-pemfile = "1"
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
