@@ -53,27 +53,30 @@ fn main() {
 
     runtime.block_on(async move {
         let shutdown = async {
+            let ctrl_c = async {
+                if let Err(e) = tokio::signal::ctrl_c().await {
+                    tracing::error!("failed to listen for ctrl-c: {}", e);
+                }
+            };
+
             #[cfg(unix)]
-            let term = async {
-                if let Ok(mut sig) =
-                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                {
-                    sig.recv().await;
-                } else {
-                    std::future::pending::<()>().await;
+            let terminate = async {
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    Ok(mut sig) => {
+                        sig.recv().await;
+                    }
+                    Err(e) => {
+                        tracing::error!("failed to listen for SIGTERM: {}", e);
+                    }
                 }
             };
 
             #[cfg(not(unix))]
-            let term = std::future::pending::<()>();
+            let terminate = std::future::pending::<()>();
 
             tokio::select! {
-                res = tokio::signal::ctrl_c() => {
-                    if let Err(e) = res {
-                        tracing::error!("failed to listen for ctrl-c: {}", e);
-                    }
-                }
-                _ = term => {}
+                _ = ctrl_c => {}
+                _ = terminate => {}
             }
             tracing::info!("shutdown signal received");
         };

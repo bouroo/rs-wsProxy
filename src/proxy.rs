@@ -9,22 +9,37 @@ use tokio::net::TcpStream;
 /// `addr` may be a literal IP (`127.0.0.1:6900`) or a hostname (`login:6900`);
 /// `tokio::net::lookup_host` resolves DNS when needed.
 pub async fn connect_tcp(addr: &str) -> Result<TcpStream, String> {
-    // Resolve the address, keeping only the first IPv4 result.
-    let addrs = tokio::net::lookup_host(addr)
+    // Resolve the address, keeping only IPv4 results.
+    let addrs: Vec<_> = tokio::net::lookup_host(addr)
         .await
         .map_err(|e| format!("DNS lookup failed for '{}': {}", addr, e))?
-        .find(|a| a.is_ipv4())
-        .ok_or_else(|| format!("no IPv4 address found for '{}'", addr))?;
+        .filter(|a| a.is_ipv4())
+        .collect();
 
-    let stream = TcpStream::connect(addrs)
-        .await
-        .map_err(|e| format!("TCP connect failed for '{}': {}", addr, e))?;
+    if addrs.is_empty() {
+        return Err(format!("no IPv4 address found for '{}'", addr));
+    }
 
-    stream
-        .set_nodelay(true)
-        .map_err(|e| format!("set_nodelay failed: {}", e))?;
+    let mut last_err = None;
+    for socket_addr in addrs {
+        match TcpStream::connect(socket_addr).await {
+            Ok(stream) => {
+                stream
+                    .set_nodelay(true)
+                    .map_err(|e| format!("set_nodelay failed: {}", e))?;
+                return Ok(stream);
+            }
+            Err(e) => {
+                last_err = Some(e);
+            }
+        }
+    }
 
-    Ok(stream)
+    Err(format!(
+        "TCP connect failed for '{}': {}",
+        addr,
+        last_err.unwrap()
+    ))
 }
 
 /// Bidirectional pump between a WebSocket and a TCP stream.

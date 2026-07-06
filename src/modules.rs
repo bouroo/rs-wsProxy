@@ -55,7 +55,16 @@ pub fn validate_target(target: &str) -> bool {
     if let Some(pos) = target.rfind(':') {
         let host = &target[..pos];
         let port = &target[pos + 1..];
-        !host.is_empty() && port.parse::<u16>().is_ok()
+        if host.is_empty() || port.parse::<u16>().is_err() {
+            return false;
+        }
+        // IPv6 addresses contain colons; with a port they must be bracketed as
+        // [ipv6]:port. Reject bare IPv6 strings like ::1 or 2001:db8::1 that
+        // could otherwise be mistaken for host:port pairs.
+        if host.contains(':') && (!host.starts_with('[') || !host.ends_with(']')) {
+            return false;
+        }
+        true
     } else {
         false
     }
@@ -156,6 +165,15 @@ mod tests {
         assert!(!validate_target("127.0.0.1:abc"));
         assert!(!validate_target(":6900"));
         assert!(!validate_target("127.0.0.1:70000"));
+        // Bare IPv6 addresses must not be accepted as host:port pairs.
+        assert!(!validate_target("::1"));
+        assert!(!validate_target("2001:db8::1"));
+    }
+
+    #[test]
+    fn test_validate_target_ipv6_bracketed() {
+        assert!(validate_target("[::1]:6900"));
+        assert!(validate_target("[2001:db8::1]:5121"));
     }
 
     #[test]
