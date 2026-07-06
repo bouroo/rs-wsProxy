@@ -150,6 +150,13 @@ async fn ws_upgrade(
 
     match verify(&state, &target) {
         VerifyResult::Accepted(resolved_target) => {
+            if !validate_target(&resolved_target) {
+                tracing::warn!(
+                    "ws rejected: invalid resolved target format '{}'",
+                    resolved_target
+                );
+                return (StatusCode::BAD_REQUEST, "invalid target format").into_response();
+            }
             tracing::info!("ws upgrade: target={}", resolved_target);
             ws.on_upgrade(move |socket| handle_socket(socket, resolved_target))
         }

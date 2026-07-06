@@ -39,4 +39,4 @@ jobs:
           sleep 1
           curl -sf http://127.0.0.1:5999/ || true
           docker stop wsproxy-ci
-        timeout: 30
+        timeout-minutes: 1

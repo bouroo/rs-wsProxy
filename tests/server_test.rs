@@ -59,6 +59,22 @@ async fn test_ws_upgrade_rejected_for_invalid_target_format() {
 }
 
 #[tokio::test]
+async fn test_ws_upgrade_rejects_invalid_resolved_target() {
+    // A valid-looking path target that is redirected to an invalid resolved
+    // format should be rejected at the HTTP layer, not after the WS handshake.
+    let mut redirects = HashMap::new();
+    redirects.insert("login:6900".to_string(), "not-a-valid-target".to_string());
+    let proxy_addr = spawn_test_server(None, redirects, None).await;
+
+    let url = format!("ws://{}/login:6900", proxy_addr);
+    let result = tokio_tungstenite::connect_async(&url).await;
+    assert!(
+        result.is_err(),
+        "expected rejection for invalid resolved target via redirect"
+    );
+}
+
+#[tokio::test]
 async fn test_ws_upgrade_rejected_when_not_in_allow_list() {
     let addr = spawn_test_server(
         Some(vec!["127.0.0.1:6900".to_string()]),
