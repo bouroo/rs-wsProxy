@@ -61,9 +61,9 @@ Client (WebSocket) → wsProxy → Target Server (TCP)
 - [x] IPv4 DNS resolution
 
 ### Phase 2: Security & Routing
-- [ ] Allow list (target filtering)
-- [ ] Redirect map (address rewriting)
-- [ ] Verify pipeline (redirect → allow check)
+- [x] Allow list (target filtering)
+- [x] Redirect map (address rewriting)
+- [x] Verify pipeline (redirect → allow check)
 
 ### Phase 3: Server & TLS
 - [ ] Axum HTTP/WebSocket server

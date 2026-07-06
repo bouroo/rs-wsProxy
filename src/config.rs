@@ -59,9 +59,14 @@ impl Clone for AppState {
 }
 
 /// Parse a comma-separated "ip:port" string into a Vec of target strings.
+/// Empty/whitespace-only entries are dropped.
 pub fn build_allowed_list(raw: Option<String>) -> Vec<String> {
     match raw {
-        Some(s) if !s.is_empty() => s.split(',').map(|p| p.trim().to_string()).collect(),
+        Some(s) if !s.is_empty() => s
+            .split(',')
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -224,6 +229,14 @@ mod tests {
         assert_eq!(args.cert, "/cert.pem");
         assert!(args.allow.is_some());
         assert!(args.redirect.is_some());
+    }
+
+    #[test]
+    fn test_allowed_list_filters_empty_entries() {
+        let list = build_allowed_list(Some("127.0.0.1:6900,, ,127.0.0.1:5121".to_string()));
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0], "127.0.0.1:6900");
+        assert_eq!(list[1], "127.0.0.1:5121");
     }
 
     #[test]
