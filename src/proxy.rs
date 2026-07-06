@@ -75,7 +75,13 @@ pub async fn handle_socket(socket: WebSocket, target: String) {
                 buf.reserve(65536);
             }
             match tcp_read.read_buf(&mut buf).await {
-                Ok(0) => break, // EOF: the TCP server closed the connection.
+                Ok(0) => {
+                    // TCP server closed the connection. Send a Close frame so
+                    // the WebSocket client sees a graceful closure instead of
+                    // an abrupt 1006 abnormal close.
+                    let _ = ws_tx.send(Message::Close(None)).await;
+                    break;
+                }
                 Ok(_) => {
                     let data = buf.split().freeze();
                     if ws_tx.send(Message::Binary(data)).await.is_err() {
