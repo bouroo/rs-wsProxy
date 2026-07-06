@@ -40,9 +40,10 @@ pub async fn handle_socket(socket: WebSocket, target: String) {
     };
 
     let (mut ws_tx, mut ws_rx) = socket.split();
+    // Splitting the TCP stream lets us read and write concurrently without a mutex.
     let (mut tcp_read, mut tcp_write) = io::split(tcp);
 
-    // WS → TCP
+    // WS → TCP: forward only binary frames; the roBrowser protocol uses binary payloads.
     let ws_to_tcp = async {
         while let Some(msg) = ws_rx.next().await {
             match msg {
@@ -53,17 +54,18 @@ pub async fn handle_socket(socket: WebSocket, target: String) {
                     }
                 }
                 Ok(Message::Close(_)) => break,
-                _ => {} // ignore text/ping/pong
+                // Text/ping/pong are ignored to keep the proxy transparent to the game protocol.
+                _ => {}
             }
         }
     };
 
-    // TCP → WS (binary passthrough)
+    // TCP → WS: binary passthrough. Use a single reusable buffer to avoid per-read allocations.
     let tcp_to_ws = async {
-        let mut buf = vec![0u8; 65536]; // 64 KiB buffer
+        let mut buf = vec![0u8; 65536]; // 64 KiB matches a typical MTU-friendly chunk size.
         loop {
             let n = match tcp_read.read(&mut buf).await {
-                Ok(0) => break, // EOF
+                Ok(0) => break, // EOF: the TCP server closed the connection.
                 Ok(n) => n,
                 Err(e) => {
                     tracing::error!("tcp→ws read error: {}", e);
@@ -81,6 +83,7 @@ pub async fn handle_socket(socket: WebSocket, target: String) {
         }
     };
 
+    // Run both half-loops concurrently; stop as soon as either side closes or errors.
     tokio::select! {
         _ = ws_to_tcp => {}
         _ = tcp_to_ws => {}

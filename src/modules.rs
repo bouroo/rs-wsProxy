@@ -16,6 +16,8 @@ pub enum VerifyResult {
 /// Run the verify pipeline (redirect → allow) against `state`.
 ///
 /// - Redirects run first so the allow-list check sees the *rewritten* target.
+///   This matches the upstream Node.js module order and lets operators alias
+///   internal hostnames while still enforcing the allow-list on the final target.
 /// - An empty allow list means "allow all" (open proxy).
 pub fn verify(state: &AppState, target: &str) -> VerifyResult {
     // 1. Redirect — rewrite the URL if a matching entry exists.
