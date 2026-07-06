@@ -20,7 +20,7 @@ impl Server {
         let router = Router::new()
             .route("/", axum::routing::get(get_root))
             .route("/ws", axum::routing::get(ws_upgrade_default))
-            .route("/:target", axum::routing::get(ws_upgrade))
+            .route("/{target}", axum::routing::get(ws_upgrade))
             .with_state(state);
 
         Server { router }

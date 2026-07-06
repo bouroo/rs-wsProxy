@@ -102,12 +102,12 @@ async fn test_ws_upgrade_accepts_allowed_target() {
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
     let payload = vec![1, 2, 3, 4];
-    ws.send(tungstenite::Message::Binary(payload.clone()))
+    ws.send(tungstenite::Message::Binary(payload.clone().into()))
         .await
         .unwrap();
 
     let response = ws.next().await.unwrap().unwrap();
-    assert_eq!(response, tungstenite::Message::Binary(payload));
+    assert_eq!(response, tungstenite::Message::Binary(payload.into()));
 }
 
 #[tokio::test]
@@ -148,12 +148,12 @@ async fn test_ws_default_route_proxies_via_redirect_fallback() {
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
     let payload = vec![9, 10, 11, 12];
-    ws.send(tungstenite::Message::Binary(payload.clone()))
+    ws.send(tungstenite::Message::Binary(payload.clone().into()))
         .await
         .unwrap();
 
     let response = ws.next().await.unwrap().unwrap();
-    assert_eq!(response, tungstenite::Message::Binary(payload));
+    assert_eq!(response, tungstenite::Message::Binary(payload.into()));
 }
 
 #[tokio::test]
@@ -166,12 +166,12 @@ async fn test_ws_default_route_proxies_via_default_target() {
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
     let payload = vec![21, 22, 23, 24];
-    ws.send(tungstenite::Message::Binary(payload.clone()))
+    ws.send(tungstenite::Message::Binary(payload.clone().into()))
         .await
         .unwrap();
 
     let response = ws.next().await.unwrap().unwrap();
-    assert_eq!(response, tungstenite::Message::Binary(payload));
+    assert_eq!(response, tungstenite::Message::Binary(payload.into()));
 }
 
 #[tokio::test]
@@ -187,12 +187,12 @@ async fn test_ws_default_target_takes_priority_over_redirect_ws() {
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
     let payload = vec![31, 32, 33, 34];
-    ws.send(tungstenite::Message::Binary(payload.clone()))
+    ws.send(tungstenite::Message::Binary(payload.clone().into()))
         .await
         .unwrap();
 
     let response = ws.next().await.unwrap().unwrap();
-    assert_eq!(response, tungstenite::Message::Binary(payload));
+    assert_eq!(response, tungstenite::Message::Binary(payload.into()));
 }
 
 #[tokio::test]
@@ -221,12 +221,12 @@ async fn test_ws_upgrade_redirect_rewrites_target() {
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
     let payload = vec![5, 6, 7, 8];
-    ws.send(tungstenite::Message::Binary(payload.clone()))
+    ws.send(tungstenite::Message::Binary(payload.clone().into()))
         .await
         .unwrap();
 
     let response = ws.next().await.unwrap().unwrap();
-    assert_eq!(response, tungstenite::Message::Binary(payload));
+    assert_eq!(response, tungstenite::Message::Binary(payload.into()));
 }
 
 #[tokio::test]
@@ -239,12 +239,12 @@ async fn test_robrowser_route_still_works() {
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
     let payload = vec![1, 2, 3, 4];
-    ws.send(tungstenite::Message::Binary(payload.clone()))
+    ws.send(tungstenite::Message::Binary(payload.clone().into()))
         .await
         .unwrap();
 
     let response = ws.next().await.unwrap().unwrap();
-    assert_eq!(response, tungstenite::Message::Binary(payload));
+    assert_eq!(response, tungstenite::Message::Binary(payload.into()));
 }
 
 /// Spawn a TCP echo server on an OS-assigned port and return its address.

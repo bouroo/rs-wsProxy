@@ -78,7 +78,7 @@ pub async fn handle_socket(socket: WebSocket, target: String) {
                 Ok(0) => break, // EOF: the TCP server closed the connection.
                 Ok(_) => {
                     let data = buf.split().freeze();
-                    if ws_tx.send(Message::Binary(data.into())).await.is_err() {
+                    if ws_tx.send(Message::Binary(data)).await.is_err() {
                         break; // WS closed
                     }
                 }
