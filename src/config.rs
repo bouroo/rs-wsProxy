@@ -222,8 +222,8 @@ mod tests {
         assert!(args.ssl);
         assert_eq!(args.key, "/key.pem");
         assert_eq!(args.cert, "/cert.pem");
-        assert!(!args.allow.is_none());
-        assert!(!args.redirect.is_none());
+        assert!(args.allow.is_some());
+        assert!(args.redirect.is_some());
     }
 
     #[test]
