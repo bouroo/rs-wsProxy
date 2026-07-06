@@ -29,7 +29,12 @@ pub struct Args {
     pub threads: usize,
 
     /// Enable SSL/TLS.
-    #[arg(short = 's', long = "ssl", env = "WSPROXY_SSL")]
+    #[arg(
+        short = 's',
+        long = "ssl",
+        env = "WSPROXY_SSL",
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
     pub ssl: bool,
 
     /// SSL private key file path.
@@ -69,8 +74,13 @@ pub struct Args {
 }
 
 /// Shared application state — allow-list, redirect map, and default target.
+///
+/// `allowed_servers` is `None` when the allow-list was never configured (open
+/// proxy mode) and `Some(vec)` when it was. An explicit empty list (`Some([])`)
+/// means "deny all" rather than "allow all", preventing a fail-open bug if the
+/// operator supplies only empty/whitespace entries.
 pub struct AppState {
-    pub allowed_servers: Vec<String>,
+    pub allowed_servers: Option<Vec<String>>,
     pub redirects: HashMap<String, String>,
     pub default_target: Option<String>,
 }
@@ -85,17 +95,27 @@ impl Clone for AppState {
     }
 }
 
-/// Parse a comma-separated "ip:port" string into a Vec of target strings.
-/// Empty/whitespace-only entries are dropped.
-pub fn build_allowed_list(raw: Option<String>) -> Vec<String> {
-    match raw {
-        Some(s) if !s.is_empty() => s
-            .split(',')
+impl AppState {
+    /// Returns `true` when the allow-list is explicitly configured and empty,
+    /// which means "deny every target".
+    pub fn is_deny_all(&self) -> bool {
+        matches!(&self.allowed_servers, Some(list) if list.is_empty())
+    }
+}
+
+/// Parse a comma-separated "ip:port" string into an allow-list.
+///
+/// - `None` → allow-list was not configured → open proxy.
+/// - `Some(...)` → allow-list was configured; empty/whitespace entries are
+///   dropped. If every entry is empty, the result is `Some([])`, which the
+///   verify pipeline treats as "deny all".
+pub fn build_allowed_list(raw: Option<String>) -> Option<Vec<String>> {
+    raw.map(|s| {
+        s.split(',')
             .map(|p| p.trim().to_string())
             .filter(|p| !p.is_empty())
-            .collect(),
-        _ => Vec::new(),
-    }
+            .collect()
+    })
 }
 
 /// Parse a comma-separated "source=target" string into a HashMap.
@@ -124,16 +144,10 @@ pub fn validate_tls_paths(ssl: bool, key: &str, cert: &str) -> Result<(), String
     }
 
     if !std::path::Path::new(key).is_file() {
-        return Err(format!(
-            "SSL key file not found: {} (use -k/--key or WSPROXY_KEY)",
-            key
-        ));
+        return Err(format!("SSL key file not found: {}", key));
     }
     if !std::path::Path::new(cert).is_file() {
-        return Err(format!(
-            "SSL certificate file not found: {} (use -c/--cert or WSPROXY_CERT)",
-            cert
-        ));
+        return Err(format!("SSL certificate file not found: {}", cert));
     }
     Ok(())
 }
@@ -182,17 +196,20 @@ mod tests {
     }
 
     #[test]
-    fn test_allowed_list_empty() {
-        let list = build_allowed_list(None);
-        assert!(list.is_empty());
+    fn test_allowed_list_not_configured() {
+        assert!(build_allowed_list(None).is_none());
+    }
 
-        let list = build_allowed_list(Some("".to_string()));
+    #[test]
+    fn test_allowed_list_configured_empty() {
+        // Explicitly configured but empty → distinguishable from unconfigured.
+        let list = build_allowed_list(Some("".to_string())).unwrap();
         assert!(list.is_empty());
     }
 
     #[test]
     fn test_allowed_list_values() {
-        let list = build_allowed_list(Some("127.0.0.1:6900, 127.0.0.1:5121".to_string()));
+        let list = build_allowed_list(Some("127.0.0.1:6900, 127.0.0.1:5121".to_string())).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0], "127.0.0.1:6900");
         assert_eq!(list[1], "127.0.0.1:5121");
@@ -232,21 +249,21 @@ mod tests {
     #[test]
     fn test_app_state_creation() {
         let state = AppState {
-            allowed_servers: vec!["127.0.0.1:6900".to_string()],
+            allowed_servers: Some(vec!["127.0.0.1:6900".to_string()]),
             redirects: HashMap::new(),
             default_target: None,
         };
-        assert_eq!(state.allowed_servers.len(), 1);
+        assert_eq!(state.allowed_servers.as_ref().unwrap().len(), 1);
     }
 
     #[test]
-    fn test_app_state_empty() {
+    fn test_app_state_unconfigured_allow_list() {
         let state = AppState {
-            allowed_servers: Vec::new(),
+            allowed_servers: None,
             redirects: HashMap::new(),
             default_target: None,
         };
-        assert!(state.allowed_servers.is_empty());
+        assert!(state.allowed_servers.is_none());
     }
 
     #[test]
@@ -300,7 +317,8 @@ mod tests {
 
     #[test]
     fn test_allowed_list_filters_empty_entries() {
-        let list = build_allowed_list(Some("127.0.0.1:6900,, ,127.0.0.1:5121".to_string()));
+        let list =
+            build_allowed_list(Some("127.0.0.1:6900,, ,127.0.0.1:5121".to_string())).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0], "127.0.0.1:6900");
         assert_eq!(list[1], "127.0.0.1:5121");
@@ -308,7 +326,8 @@ mod tests {
 
     #[test]
     fn test_allowed_list_whitespace() {
-        let list = build_allowed_list(Some(" 127.0.0.1:6900 , 127.0.0.1:5121 ".to_string()));
+        let list =
+            build_allowed_list(Some(" 127.0.0.1:6900 , 127.0.0.1:5121 ".to_string())).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0], "127.0.0.1:6900");
         assert_eq!(list[1], "127.0.0.1:5121");
@@ -317,7 +336,7 @@ mod tests {
     #[test]
     fn test_build_allowed_list_from_args() {
         let args = Args::parse_from(["wsproxy", "-a", "127.0.0.1:6900,127.0.0.1:5121"]);
-        let list = build_allowed_list(args.allow);
+        let list = build_allowed_list(args.allow).unwrap();
         assert_eq!(list.len(), 2);
     }
 
@@ -335,7 +354,7 @@ mod tests {
     #[test]
     fn test_app_state_with_redirects() {
         let state = AppState {
-            allowed_servers: Vec::new(),
+            allowed_servers: None,
             redirects: build_redirects(Some("localhost:6900=login:6900".to_string())),
             default_target: None,
         };
@@ -345,7 +364,7 @@ mod tests {
     #[test]
     fn test_app_state_empty_redirects() {
         let state = AppState {
-            allowed_servers: Vec::new(),
+            allowed_servers: None,
             redirects: build_redirects(None),
             default_target: None,
         };
@@ -359,7 +378,7 @@ mod tests {
             redirects: build_redirects(Some("localhost:6900=login:6900".to_string())),
             default_target: None,
         };
-        assert_eq!(state.allowed_servers.len(), 1);
+        assert_eq!(state.allowed_servers.as_ref().unwrap().len(), 1);
         assert_eq!(state.redirects.len(), 1);
     }
 
@@ -377,13 +396,13 @@ mod tests {
     #[test]
     fn test_validate_tls_paths_fails_for_missing_key() {
         let err = validate_tls_paths(true, "missing.key", "Cargo.toml").unwrap_err();
-        assert!(err.contains("SSL key file not found"));
+        assert!(err.contains("SSL key file not found: missing.key"));
     }
 
     #[test]
     fn test_validate_tls_paths_fails_for_missing_cert() {
         let err = validate_tls_paths(true, "Cargo.toml", "missing.crt").unwrap_err();
-        assert!(err.contains("SSL certificate file not found"));
+        assert!(err.contains("SSL certificate file not found: missing.crt"));
     }
 
     #[test]

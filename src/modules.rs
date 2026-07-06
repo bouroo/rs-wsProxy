@@ -26,18 +26,23 @@ pub fn verify(state: &AppState, target: &str) -> VerifyResult {
         None => target.to_string(),
     };
 
-    // 2. Allow — empty list = allow all (with warning).
-    if state.allowed_servers.is_empty() {
-        return VerifyResult::Accepted(target);
-    }
-
-    if state.allowed_servers.contains(&target) {
-        VerifyResult::Accepted(target)
-    } else {
-        VerifyResult::Rejected(RejectReason(format!(
-            "target '{}' not in allow list",
-            target
-        )))
+    // 2. Allow — `None` = allow all (open proxy); `Some(list)` = enforce it.
+    //    An explicit empty list means "deny all".
+    match state.allowed_servers.as_ref() {
+        None => VerifyResult::Accepted(target),
+        Some(list) if list.is_empty() => VerifyResult::Rejected(RejectReason(
+            "allow-list is configured but empty — denying all targets".to_string(),
+        )),
+        Some(list) => {
+            if list.contains(&target) {
+                VerifyResult::Accepted(target)
+            } else {
+                VerifyResult::Rejected(RejectReason(format!(
+                    "target '{}' not in allow list",
+                    target
+                )))
+            }
+        }
     }
 }
 
@@ -53,7 +58,7 @@ mod tests {
 
     fn empty_state() -> AppState {
         AppState {
-            allowed_servers: Vec::new(),
+            allowed_servers: None,
             redirects: HashMap::new(),
             default_target: None,
         }
@@ -71,7 +76,7 @@ mod tests {
     #[test]
     fn test_verify_allow_list_hit() {
         let mut state = empty_state();
-        state.allowed_servers.push("127.0.0.1:6900".to_string());
+        state.allowed_servers = Some(vec!["127.0.0.1:6900".to_string()]);
         assert!(matches!(
             verify(&state, "127.0.0.1:6900"),
             VerifyResult::Accepted(_)
@@ -81,7 +86,7 @@ mod tests {
     #[test]
     fn test_verify_allow_list_miss() {
         let mut state = empty_state();
-        state.allowed_servers.push("127.0.0.1:6900".to_string());
+        state.allowed_servers = Some(vec!["127.0.0.1:6900".to_string()]);
         match verify(&state, "127.0.0.1:9999") {
             VerifyResult::Rejected(reason) => {
                 assert_eq!(reason.0, "target '127.0.0.1:9999' not in allow list")
@@ -91,9 +96,21 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_empty_allow_list_denies_all() {
+        // A configured but empty allow-list must be treated as "deny all", not
+        // "allow all".
+        let mut state = empty_state();
+        state.allowed_servers = Some(Vec::new());
+        match verify(&state, "127.0.0.1:6900") {
+            VerifyResult::Rejected(_) => {}
+            _ => panic!("expected rejection for empty configured allow-list"),
+        }
+    }
+
+    #[test]
     fn test_verify_redirect_rewrites_then_allows() {
         let mut state = empty_state();
-        state.allowed_servers.push("login:6900".to_string());
+        state.allowed_servers = Some(vec!["login:6900".to_string()]);
 
         let mut redirects = HashMap::new();
         redirects.insert("localhost:6900".to_string(), "login:6900".to_string());
@@ -131,7 +148,7 @@ mod tests {
     fn test_verify_order_redirect_then_allow() {
         // Redirect "a:1" → "b:2", allow list has only "b:2".
         let mut state = empty_state();
-        state.allowed_servers.push("b:2".to_string());
+        state.allowed_servers = Some(vec!["b:2".to_string()]);
 
         let mut redirects = HashMap::new();
         redirects.insert("a:1".to_string(), "b:2".to_string());
@@ -162,7 +179,7 @@ mod tests {
     #[test]
     fn test_verify_empty_target_rejected_when_allow_list_present() {
         let mut state = empty_state();
-        state.allowed_servers.push("127.0.0.1:6900".to_string());
+        state.allowed_servers = Some(vec!["127.0.0.1:6900".to_string()]);
 
         match verify(&state, "") {
             VerifyResult::Rejected(_) => {}

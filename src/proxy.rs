@@ -1,17 +1,16 @@
 use axum::extract::ws::{Message, WebSocket};
+use bytes::BytesMut;
 use futures_util::{SinkExt, StreamExt};
-use std::net::SocketAddr;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 /// Connect to `addr` (force IPv4), enable no-delay, zero timeout.
+///
+/// `addr` may be a literal IP (`127.0.0.1:6900`) or a hostname (`login:6900`);
+/// `tokio::net::lookup_host` resolves DNS when needed.
 pub async fn connect_tcp(addr: &str) -> Result<TcpStream, String> {
-    let socket_addr: SocketAddr = addr
-        .parse()
-        .map_err(|e| format!("invalid target address '{}': {}", addr, e))?;
-
-    // Force IPv4 — filter to v4 if DNS resolves multiple.
-    let addrs = tokio::net::lookup_host(socket_addr)
+    // Resolve the address, keeping only the first IPv4 result.
+    let addrs = tokio::net::lookup_host(addr)
         .await
         .map_err(|e| format!("DNS lookup failed for '{}': {}", addr, e))?
         .find(|a| a.is_ipv4())
@@ -54,31 +53,39 @@ pub async fn handle_socket(socket: WebSocket, target: String) {
                     }
                 }
                 Ok(Message::Close(_)) => break,
+                Err(e) => {
+                    tracing::error!("ws read error: {}", e);
+                    break;
+                }
                 // Text/ping/pong are ignored to keep the proxy transparent to the game protocol.
                 _ => {}
             }
         }
     };
 
-    // TCP → WS: binary passthrough. Use a single reusable buffer to avoid per-read allocations.
+    // TCP → WS: binary passthrough. Use BytesMut + split().freeze() so each
+    // WebSocket frame references the buffer without a per-read allocation.
     let tcp_to_ws = async {
-        let mut buf = vec![0u8; 65536]; // 64 KiB matches a typical MTU-friendly chunk size.
+        let mut buf = BytesMut::with_capacity(65536); // 64 KiB chunk buffer.
         loop {
-            let n = match tcp_read.read(&mut buf).await {
+            // read_buf on an empty BytesMut only reserves 64 bytes, which would
+            // cause an allocation storm and cap reads to 64 bytes. Keep the
+            // buffer reasonably full so we can read large chunks.
+            if buf.capacity() < 4096 {
+                buf.reserve(65536);
+            }
+            match tcp_read.read_buf(&mut buf).await {
                 Ok(0) => break, // EOF: the TCP server closed the connection.
-                Ok(n) => n,
+                Ok(_) => {
+                    let data = buf.split().freeze();
+                    if ws_tx.send(Message::Binary(data.into())).await.is_err() {
+                        break; // WS closed
+                    }
+                }
                 Err(e) => {
                     tracing::error!("tcp→ws read error: {}", e);
                     break;
                 }
-            };
-
-            if ws_tx
-                .send(Message::Binary(buf[..n].to_vec()))
-                .await
-                .is_err()
-            {
-                break; // WS closed
             }
         }
     };
@@ -95,16 +102,15 @@ pub async fn handle_socket(socket: WebSocket, target: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::SocketAddr;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
-    #[tokio::test]
-    async fn test_connect_tcp_to_echo() {
-        // Bind a listener on an OS-assigned port (port 0)
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let echo_addr = listener.local_addr().unwrap();
-
-        // Spawn echo server in background
+    /// Echo TCP server — reads bytes and writes them back.
+    /// Returns the join handle and the bound address.
+    async fn echo_server(addr: SocketAddr) -> (tokio::task::JoinHandle<()>, SocketAddr) {
+        let listener = TcpListener::bind(addr).await.unwrap();
+        let bound_addr = listener.local_addr().unwrap();
         let handle = tokio::spawn(async move {
             if let Ok((mut stream, _)) = listener.accept().await {
                 let mut buf = vec![0u8; 65536];
@@ -120,6 +126,13 @@ mod tests {
                 }
             }
         });
+        (handle, bound_addr)
+    }
+
+    #[tokio::test]
+    async fn test_connect_tcp_to_echo() {
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let (handle, echo_addr) = echo_server(addr).await;
 
         // Connect and exchange data
         let mut stream = connect_tcp(&echo_addr.to_string()).await.unwrap();
@@ -133,16 +146,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_connect_tcp_to_hostname() {
+        // Verify that a hostname:port is resolved and connected successfully.
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        let (handle, echo_addr) = echo_server(addr).await;
+
+        let host = format!("localhost:{}", echo_addr.port());
+        let mut stream = connect_tcp(&host).await.unwrap();
+        stream.write_all(b"hostname").await.unwrap();
+
+        let mut buf = vec![0u8; 16];
+        let n = stream.read(&mut buf).await.unwrap();
+        assert_eq!(&buf[..n], b"hostname");
+
+        handle.abort();
+    }
+
+    #[tokio::test]
     async fn test_connect_tcp_rejects_invalid_address() {
         let result = connect_tcp("not-an-address").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("invalid target address"));
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("DNS lookup failed") || err.contains("no IPv4 address found"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[tokio::test]
     async fn test_connect_tcp_rejects_unreachable_port() {
-        // Nothing should be listening on this port; connect fails quickly.
-        let result = connect_tcp("127.0.0.1:1").await;
+        // Bind to an ephemeral port and drop it immediately to guarantee it is closed.
+        // This avoids potential hangs in firewalled environments that drop packets to port 1.
+        let port = {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let result = connect_tcp(&format!("127.0.0.1:{}", port)).await;
         assert!(result.is_err());
     }
 }

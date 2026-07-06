@@ -1222,6 +1222,7 @@ version = "1.0.0"
 dependencies = [
  "axum",
  "axum-server",
+ "bytes",
  "clap",
  "futures-util",
  "reqwest",
