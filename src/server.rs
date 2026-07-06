@@ -65,6 +65,8 @@ async fn ws_upgrade(
 
     if !validate_target(&target) {
         tracing::warn!("ws rejected: invalid target format '{}'", target);
+        // Reject at the HTTP layer so clients see a 4xx instead of a completed
+        // WebSocket handshake that is immediately closed.
         return (StatusCode::BAD_REQUEST, "invalid target format").into_response();
     }
 
@@ -75,6 +77,7 @@ async fn ws_upgrade(
         }
         VerifyResult::Rejected(reason) => {
             tracing::warn!("ws rejected: {}", reason.0);
+            // Reject at the HTTP layer; do not complete the WebSocket upgrade.
             (StatusCode::FORBIDDEN, reason.0).into_response()
         }
     }

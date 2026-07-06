@@ -1,6 +1,6 @@
 # wsProxy - WebSocket to TCP Proxy
 
-A high-performance WebSocket-to-TCP proxy server written in Rust, compatible with roBrowser game client protocols.
+A high-performance WebSocket-to-TCP proxy server written in Rust, compatible with roBrowser game client protocols. The target TCP server is encoded in the WebSocket URL path, e.g. `ws://proxy:5999/127.0.0.1:6900`.
 
 ## Features
 
@@ -8,7 +8,7 @@ A high-performance WebSocket-to-TCP proxy server written in Rust, compatible wit
 - **Allow List Security**: Restrict which target servers clients can connect to
 - **Redirect Map**: Rewrite target addresses before proxying (e.g., `localhost:6900` → `login:6900`)
 - **TLS Support**: Optional TLS via rustls for secure connections
-- **Configurable**: Port, worker threads, SSL, allow list, and redirects via CLI args
+- **Configurable**: Port, worker threads, SSL, allow list, and redirects via CLI args or environment variables
 
 ## Usage
 
@@ -22,15 +22,34 @@ cargo run -- -p 8080 -s -k ./default.key -c ./default.crt -a "127.0.0.1:6900,127
 
 ### CLI Options
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-p, --port` | Port to bind | `5999` |
-| `-t, --threads` | Tokio worker threads | `1` |
-| `-s, --ssl` | Enable TLS | `false` |
-| `-k, --key` | SSL private key path | `./default.key` |
-| `-c, --cert` | SSL certificate path | `./default.crt` |
-| `-a, --allow` | Comma-separated allowed targets (ip:port) | empty (open proxy) |
-| `-r, --redirect` | Comma-separated redirects (source=target) | empty |
+All options can also be set via `WSPROXY_*` environment variables (e.g., `WSPROXY_PORT=8080`).
+
+| Flag | Description | Default | Environment Variable |
+|------|-------------|---------|---------------------|
+| `-p, --port` | Port to bind | `5999` | `WSPROXY_PORT` |
+| `-t, --threads` | Tokio worker threads | `1` | `WSPROXY_THREADS` |
+| `-s, --ssl` | Enable TLS | `false` | `WSPROXY_SSL` |
+| `-k, --key` | SSL private key path | `./default.key` | `WSPROXY_KEY` |
+| `-c, --cert` | SSL certificate path | `./default.crt` | `WSPROXY_CERT` |
+| `-a, --allow` | Comma-separated allowed targets (ip:port) | empty (open proxy) | `WSPROXY_ALLOW` |
+| `-r, --redirect` | Comma-separated redirects (source=target) | empty | `WSPROXY_REDIRECT` |
+
+## Protocol
+
+Clients connect to `ws://proxy:port/<target>` where `<target>` is `host:port` of the TCP server. The proxy:
+
+1. Validates the target format.
+2. Applies any matching redirect.
+3. Checks the allow-list (empty list = open proxy, logged at startup).
+4. Upgrades to WebSocket and opens a TCP connection to the resolved target.
+5. Pumps binary frames bidirectionally until either side closes.
+
+## Performance
+
+- TCP connections use `TCP_NODELAY` and IPv4 resolution to match the upstream Node.js behavior.
+- The bidirectional pump splits the TCP stream into independent read/write halves, avoiding lock contention.
+- Tune `-t/--threads` to match available CPU cores for high-throughput workloads.
+- Use `RUST_LOG=debug` for request-level tracing; default level is `info`.
 
 ## Architecture
 
@@ -81,9 +100,9 @@ Client (WebSocket) → wsProxy → Target Server (TCP)
 - [x] Mutation testing config (cargo-mutants)
 
 ### Phase 6: Documentation & Polish
-- [ ] README.md
-- [ ] Code comments (why, not what)
-- [ ] Performance profiling
+- [x] README.md
+- [x] Code comments (why, not what)
+- [x] Performance profiling note
 
 ## Testing
 
