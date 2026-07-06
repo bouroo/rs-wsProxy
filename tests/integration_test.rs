@@ -1,5 +1,6 @@
 use clap::Parser;
 use rs_ws_proxy::{build_allowed_list, build_redirects, AppState, Args};
+use std::collections::HashMap;
 
 #[test]
 fn test_default_args() {
@@ -59,22 +60,21 @@ fn test_redirects() {
 #[test]
 fn test_app_state_creation() {
     let state = AppState {
-        allowed_servers: vec!["127.0.0.1:6900".to_string()],
-        redirects: std::collections::HashMap::new(),
+        allowed_servers: Some(vec!["127.0.0.1:6900".to_string()]),
+        redirects: HashMap::new(),
         default_target: None,
     };
 
-    assert_eq!(state.allowed_servers.len(), 1);
+    assert_eq!(state.allowed_servers.as_ref().unwrap().len(), 1);
 }
 
 #[test]
 fn test_build_allowed_list() {
-    // Test empty string
-    let list = build_allowed_list(None);
-    assert!(list.is_empty());
+    // Test not configured
+    assert!(build_allowed_list(None).is_none());
 
     // Test with values
-    let list = build_allowed_list(Some("127.0.0.1:6900,127.0.0.1:5121".to_string()));
+    let list = build_allowed_list(Some("127.0.0.1:6900,127.0.0.1:5121".to_string())).unwrap();
     assert_eq!(list.len(), 2);
     assert_eq!(list[0], "127.0.0.1:6900");
     assert_eq!(list[1], "127.0.0.1:5121");

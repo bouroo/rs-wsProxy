@@ -1,4 +1,5 @@
 use axum::{http::StatusCode, response::Html, response::IntoResponse, Router};
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -14,41 +15,68 @@ pub struct Server {
 impl Server {
     /// Build a new server with the given state.
     pub fn new(state: Arc<AppState>) -> Self {
-        // Order matters: `/ws` must be matched before the catch-all `/:target`.
+        // `/ws` is matched before the catch-all `/:target` because Axum's radix
+        // tree router prioritizes static paths over path parameters.
         let router = Router::new()
             .route("/", axum::routing::get(get_root))
             .route("/ws", axum::routing::get(ws_upgrade_default))
-            .route("/:target", axum::routing::get(ws_upgrade))
+            .route("/{target}", axum::routing::get(ws_upgrade))
             .with_state(state);
 
         Server { router }
     }
 
-    /// Start listening on the given port (plain HTTP/WebSocket).
-    pub async fn start_plain(self, addr: SocketAddr) {
+    /// Start listening on the given address (plain HTTP/WebSocket).
+    pub async fn start_plain<F>(self, addr: SocketAddr, signal: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
         tracing::info!("wsProxy listening on http://{}", addr);
 
         let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-        self.serve(listener).await;
+        axum::serve(listener, self.router)
+            .with_graceful_shutdown(signal)
+            .await
+            .unwrap();
     }
 
-    /// Serve an already-bound listener (used by tests and by `start_plain`).
+    /// Serve an already-bound listener (used by tests).
+    /// Never triggers graceful shutdown so tests can run until completion.
     pub async fn serve(self, listener: tokio::net::TcpListener) {
-        axum::serve(listener, self.router).await.unwrap();
+        axum::serve(listener, self.router)
+            .with_graceful_shutdown(std::future::pending::<()>())
+            .await
+            .unwrap();
     }
 
     /// Start listening with TLS (rustls). Caller must supply cert+key paths.
-    pub async fn start_tls(self, addr: SocketAddr, cert_path: &str, key_path: &str) {
+    pub async fn start_tls<F>(self, addr: SocketAddr, cert_path: &str, key_path: &str, signal: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
         tracing::info!("wsProxy listening on https://{} (TLS)", addr);
 
         let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
             .await
             .unwrap();
 
-        axum_server::tls_rustls::bind_rustls(addr, config)
-            .serve(self.router.into_make_service())
-            .await
-            .unwrap();
+        let handle = axum_server::Handle::new();
+        let server = axum_server::tls_rustls::bind_rustls(addr, config)
+            .handle(handle.clone())
+            .serve(self.router.into_make_service());
+
+        // Spawn a task that waits for the shutdown signal, then asks the
+        // axum_server handle to perform a graceful shutdown with a 30-second
+        // deadline. The main task then awaits the server future so connections
+        // can drain instead of being abruptly dropped.
+        let shutdown_handle = handle.clone();
+        tokio::spawn(async move {
+            signal.await;
+            tracing::info!("TLS graceful shutdown signal received");
+            shutdown_handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+        });
+
+        server.await.unwrap();
     }
 }
 
@@ -88,6 +116,13 @@ async fn ws_upgrade_default(
 
     match verify(&state, &target) {
         VerifyResult::Accepted(resolved_target) => {
+            if !validate_target(&resolved_target) {
+                tracing::warn!(
+                    "ws rejected: invalid resolved target format '{}'",
+                    resolved_target
+                );
+                return (StatusCode::BAD_REQUEST, "invalid target format").into_response();
+            }
             tracing::info!("ws upgrade: /ws -> target={}", resolved_target);
             ws.on_upgrade(move |socket| handle_socket(socket, resolved_target))
         }
@@ -115,6 +150,13 @@ async fn ws_upgrade(
 
     match verify(&state, &target) {
         VerifyResult::Accepted(resolved_target) => {
+            if !validate_target(&resolved_target) {
+                tracing::warn!(
+                    "ws rejected: invalid resolved target format '{}'",
+                    resolved_target
+                );
+                return (StatusCode::BAD_REQUEST, "invalid target format").into_response();
+            }
             tracing::info!("ws upgrade: target={}", resolved_target);
             ws.on_upgrade(move |socket| handle_socket(socket, resolved_target))
         }
