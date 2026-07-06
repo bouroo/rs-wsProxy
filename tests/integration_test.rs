@@ -61,6 +61,7 @@ fn test_app_state_creation() {
     let state = AppState {
         allowed_servers: vec!["127.0.0.1:6900".to_string()],
         redirects: std::collections::HashMap::new(),
+        default_target: None,
     };
 
     assert_eq!(state.allowed_servers.len(), 1);

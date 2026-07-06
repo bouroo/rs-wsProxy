@@ -27,6 +27,7 @@ fn main() {
     let state = Arc::new(config::AppState {
         allowed_servers: build_allowed_list(args.allow.clone()),
         redirects: build_redirects(args.redirect.clone()),
+        default_target: args.default_target.clone(),
     });
 
     // Warn if running in open-proxy mode.

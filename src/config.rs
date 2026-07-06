@@ -58,15 +58,21 @@ pub struct Args {
     #[arg(short = 'r', long = "redirect", env = "WSPROXY_REDIRECT")]
     pub redirect: Option<String>,
 
+    /// Default target for the /ws route (RebuildClient mode).
+    /// Optional; if unset, the /ws route falls back to a redirect entry with key "ws".
+    #[arg(short = 'd', long = "default-target", env = "WSPROXY_DEFAULT_TARGET")]
+    pub default_target: Option<String>,
+
     /// Show help and exit.
     #[arg(short = 'h', long = "help")]
     pub help: bool,
 }
 
-/// Shared application state — allow-list and redirect map.
+/// Shared application state — allow-list, redirect map, and default target.
 pub struct AppState {
     pub allowed_servers: Vec<String>,
     pub redirects: HashMap<String, String>,
+    pub default_target: Option<String>,
 }
 
 impl Clone for AppState {
@@ -74,6 +80,7 @@ impl Clone for AppState {
         AppState {
             allowed_servers: self.allowed_servers.clone(),
             redirects: self.redirects.clone(),
+            default_target: self.default_target.clone(),
         }
     }
 }
@@ -227,6 +234,7 @@ mod tests {
         let state = AppState {
             allowed_servers: vec!["127.0.0.1:6900".to_string()],
             redirects: HashMap::new(),
+            default_target: None,
         };
         assert_eq!(state.allowed_servers.len(), 1);
     }
@@ -236,6 +244,7 @@ mod tests {
         let state = AppState {
             allowed_servers: Vec::new(),
             redirects: HashMap::new(),
+            default_target: None,
         };
         assert!(state.allowed_servers.is_empty());
     }
@@ -244,6 +253,19 @@ mod tests {
     fn test_help_flag() {
         let args = Args::parse_from(["wsproxy", "--help"]);
         assert!(args.help);
+    }
+
+    #[test]
+    fn test_default_target_arg() {
+        let args = Args::parse_from(["wsproxy", "-d", "127.0.0.1:6900"]);
+        assert_eq!(args.default_target, Some("127.0.0.1:6900".to_string()));
+    }
+
+    #[test]
+    fn test_default_target_env() {
+        // clap's env attribute reads at parse time; manually construct the value.
+        let args = Args::parse_from(["wsproxy", "--default-target", "backend:5121"]);
+        assert_eq!(args.default_target, Some("backend:5121".to_string()));
     }
 
     #[test]
@@ -263,6 +285,8 @@ mod tests {
             "127.0.0.1:6900,127.0.0.1:5121",
             "-r",
             "localhost:6900=login:6900",
+            "-d",
+            "127.0.0.1:6900",
         ]);
         assert_eq!(args.port, 8080);
         assert_eq!(args.threads, 2);
@@ -271,6 +295,7 @@ mod tests {
         assert_eq!(args.cert, "/cert.pem");
         assert!(args.allow.is_some());
         assert!(args.redirect.is_some());
+        assert_eq!(args.default_target, Some("127.0.0.1:6900".to_string()));
     }
 
     #[test]
@@ -312,6 +337,7 @@ mod tests {
         let state = AppState {
             allowed_servers: Vec::new(),
             redirects: build_redirects(Some("localhost:6900=login:6900".to_string())),
+            default_target: None,
         };
         assert_eq!(state.redirects.len(), 1);
     }
@@ -321,6 +347,7 @@ mod tests {
         let state = AppState {
             allowed_servers: Vec::new(),
             redirects: build_redirects(None),
+            default_target: None,
         };
         assert!(state.redirects.is_empty());
     }
@@ -330,6 +357,7 @@ mod tests {
         let state = AppState {
             allowed_servers: build_allowed_list(Some("127.0.0.1:6900".to_string())),
             redirects: build_redirects(Some("localhost:6900=login:6900".to_string())),
+            default_target: None,
         };
         assert_eq!(state.allowed_servers.len(), 1);
         assert_eq!(state.redirects.len(), 1);

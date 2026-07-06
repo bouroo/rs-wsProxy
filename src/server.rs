@@ -59,20 +59,28 @@ async fn get_root() -> Html<String> {
 
 /// WebSocket upgrade handler for the `/ws` path used by clients that do not
 /// encode the target address in the URL path (e.g., RagnarokRebuildTcp's
-/// RebuildClient). The actual TCP target is resolved from the redirect map
-/// using the special key `ws`, allowing the same proxy to serve both
-/// roBrowser-style and Rebuild-style clients.
+/// RebuildClient). The actual TCP target is resolved in priority order:
+///
+/// 1. The dedicated `--default-target` / `WSPROXY_DEFAULT_TARGET` value.
+/// 2. A redirect entry with the special key `ws` (backward-compatible with the
+///    original RebuildClient support).
+/// 3. Reject with 400 if neither is configured.
 async fn ws_upgrade_default(
     ws: axum::extract::ws::WebSocketUpgrade,
     state: axum::extract::State<Arc<AppState>>,
 ) -> axum::response::Response {
-    let target = match state.redirects.get("ws") {
-        Some(target) => target.clone(),
+    let target = state
+        .default_target
+        .clone()
+        .or_else(|| state.redirects.get("ws").cloned());
+
+    let target = match target {
+        Some(target) => target,
         None => {
             tracing::warn!("ws rejected: /ws requested but no default target configured");
             return (
                 StatusCode::BAD_REQUEST,
-                "no default target configured for /ws; use -r ws=<host>:<port>",
+                "no default target configured for /ws; use -d/--default-target or -r ws=<host>:<port>",
             )
                 .into_response();
         }
