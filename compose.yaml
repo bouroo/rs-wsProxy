@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Containerfile
-    image: ghcr.io/bouroo/rs-wsProxy:latest
+    image: ghcr.io/bouroo/rs-wsproxy:latest
     container_name: wsproxy
     ports:
       - "5999:5999"
@@ -12,9 +12,7 @@ services:
     # Override default command as needed:
     # command: ["-a", "127.0.0.1:6900"]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:5999/"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+    # Note: no container-internal healthcheck is configured because the
+    # runtime image (gcr.io/distroless/cc-debian13:nonroot) does not include
+    # curl or a shell. External health checks can be done against the published
+    # port (e.g. curl http://host:5999/ from the Docker host).
